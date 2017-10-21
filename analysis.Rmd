@@ -1,0 +1,131 @@
+---
+title: "Prediction of claim for Porto Seguro"
+output: html_notebook
+---
+
+Analysis of R dataset for Porto Seguro
+
+
+```{r}
+# Load required packages
+#packages <- c("ggplot2", "scales", "grid","ggthemes","gridExtra", "RColorBrewer", "corrplot", #visualization
+#              "dplyr", "readr", "data.table", "tibble", "tidyr", "stringr", "forcats", #datamiipulation
+#            "ggrepel", "ggridges", "ggridges", "VIM", "plotly", "ggforce", #specvisual
+#              "mgcv", "plyr", "stargazer", "DAAG", "plotly", "lmtest", "car", "MASS", "RMySQL")
+
+library(dplyr)
+library(ggplot2)
+#for (p in packages) {
+#
+#  library(p, character.only=T)
+#}
+# -->need to download  alluvial later
+#Load data
+train <- as.tibble(fread('input/train.csv', na.strings=c("-1","-1.0"))) # turn -1 or -1.0 into proper NA
+test <- as.tibble(fread('input/test.csv', na.strings=c("-1","-1.0")))
+
+```
+
+
+#Explore data structure
+```{r}
+
+#first exploration on file
+summary(train)
+glimpse(train)
+str(train)
+
+summary(test)
+glimpse(test)
+```
+
+#Missing value
+```{r}
+sum(is.na(train))
+sum(is.na(test))
+```
+
+#Reformating features
+```{r}
+#we transform categorical var to factor and bin to logical
+#train dataset
+head(train$target)
+str(train$target)
+train$target <- factor(train$target, levels = c(0,1))
+
+str(train$ps_ind_02_cat)
+train <- train %>% 
+  mutate_at(vars(ends_with("cat")), funs(factor))
+  
+train <- train %>%   
+  mutate_at(vars(ends_with("bin")), funs(as.logical))
+
+#test dataset
+head(test)
+str(test)
+test <- test %>% 
+  mutate_at(vars(ends_with("cat")), funs(factor))
+  
+test <- test %>%   
+  mutate_at(vars(ends_with("bin")), funs(as.logical))
+
+```
+
+#exploratory analysis
+```{r}
+#train dataset
+#distribution of target
+summary(train$target) #--> the claim data is not balanced
+summary(train)
+
+#visualization on the bin variable
+
+```
+
+
+#train the data
+```{r}
+#train the data
+fit <- glm(target ~. - id,data=train,family=binomial(link = 'logit'))
+summary(fit)
+#model result
+library(pscl)
+pR2(fit)
+#analyse the table of deviance
+#anova(fit, test = "Chisq") --> might use later
+#--> 1. significant vars are ind_03, ind_05_cat, ind_07_bin, ind_08_bin,
+#ind_15, ind_17_bin, car_07_cat, car_13
+#--> 2. ps_ind_09_bin & ps_ind_14 could very higly likely to be collinear
+#correlation overview
+library(dplyr)
+library(corrplot)
+train %>% 
+  select(-id, -starts_with("ps_calc")) %>% 
+  mutate_at(vars(ends_with("cat")),funs(as.integer)) %>% 
+  mutate_at(vars(ends_with("bin")),funs(as.integer)) %>% 
+  mutate(target = as.integer(target)) %>% 
+  cor(use = "complete.obs", method = "spearman") %>% 
+  corrplot(type = "lower", tl.col = "blue", diag =FALSE)
+###finding:
+#--> ind_12_bin has strong correlation with ind_14
+#--> ind_16_bin has negative correlation with ind_17_bin and ind_18_bin
+#--> ps_car_12 has strong positive correlation with car_13 & 14
+#--> ps_car_13 has strong positive correlation with car_14 & 15
+#deep dive into these variables
+train %>% 
+  select(ps_ind_09_bin,ps_ind_12_bin, ps_ind_14, ps_ind_16_bin, ps_ind_17_bin, ps_ind_18_bin, ps_car_12, ps_car_13, ps_car_14, ps_car_15, ps_car_02_cat,ps_car_03_cat, ps_car_04_cat, ps_car_08_cat,
+         ps_reg_02, ps_reg_03) %>% 
+  mutate_at(vars(ends_with("cat")),funs(as.integer)) %>% 
+  mutate_at(vars(ends_with("bin")),funs(as.integer)) %>% 
+  cor(use = "complete.obs", method = "spearman") %>% 
+  corrplot(type = "lower", tl.col = "blue", diag =FALSE, method = "number")
+
+removevars <- names(train) %in% c("ps_ind_09_bin", "ps_ind_14")
+newtrain <- train[!removevars]
+
+newfit <- glm(target ~. - id,data=newtrain,family=binomial(link = 'logit'))
+summary(newfit)
+pR2(newfit)
+
+```
+
